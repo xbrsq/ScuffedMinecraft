@@ -60,7 +60,7 @@ Camera camera;
 GLuint framebufferTexture;
 GLuint depthTexture;
 
-// custom data:
+// selection data:
 glm::vec3 sel_start;
 glm::vec3 sel_end;
 bool sel_pressed = false;
@@ -561,6 +561,8 @@ void framebufferSizeCallback(GLFWwindow* window, int width, int height)
 }
 
 unsigned int get_block_type(int blockX, int blockY, int blockZ) {
+	// get block at (X,Y,Z) from Planet.
+	// Copied from player underwater check in main().
 
 	int chunkX = blockX < 0 ? floorf(blockX / (float)CHUNK_SIZE) : blockX / (int)CHUNK_SIZE;
 	int chunkY = blockY < 0 ? floorf(blockY / (float)CHUNK_SIZE) : blockY / (int)CHUNK_SIZE;
@@ -633,6 +635,7 @@ void processInput(GLFWwindow* window)
 
 	// selections:
 	if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
+		// set start pos
 		auto result = Physics::Raycast(camera.Position, camera.Front, 5);
 		if (!result.hit)
 			return;
@@ -640,6 +643,7 @@ void processInput(GLFWwindow* window)
 		sel_start = glm::vec3(result.blockX, result.blockY, result.blockZ);
 	}
 	if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) {
+		// set end pos
 		auto result = Physics::Raycast(camera.Position, camera.Front, 5);
 		if (!result.hit)
 			return;
@@ -647,11 +651,15 @@ void processInput(GLFWwindow* window)
 		sel_end = glm::vec3(result.blockX, result.blockY, result.blockZ);
 	}
 	if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
+		// output block data in feature format
+
+		// only do it once per press
 		if (sel_pressed) {
 			return;
 		}
 		sel_pressed = true;
-		// data
+
+		// init data
 		glm::vec3 delta = glm::vec3(
 			fabsf(sel_start.x - sel_end.x),
 			fabsf(sel_start.y - sel_end.y),
@@ -663,6 +671,8 @@ void processInput(GLFWwindow* window)
 			fmin(sel_start.z, sel_end.z)
 		);
 		std::vector<int> dat = std::vector<int>((delta.x+1)*(delta.y+1)*(delta.z+1));
+
+		// get block data from planet
 		int pos = 0;
 		for (int sy = min.y; sy <= min.y+delta.y; sy++) {
 			for (int sx = min.x; sx <= min.x + delta.x; sx++) {
@@ -672,9 +682,11 @@ void processInput(GLFWwindow* window)
 			}
 		}
 
+		// output data to cout:
 		pos = 0;
 		std::cout << "{\n\t{0,0,0,0,0,0},\t\t\t// Insert Noise Here";
 		std::cout << "\n\t{\t\t\t\t\t// Blocks";
+		// block data:
 		for (int sy = 0;sy <= delta.y;sy++) {
 			for (int sz = 0;sz <= delta.z;sz++) {
 				std::cout << "\n\t\t";
@@ -690,6 +702,7 @@ void processInput(GLFWwindow* window)
 		std::cout << "\n\t},\n\t{\t\t\t\t// Replace?\n\t\t";
 
 		pos = 0;
+		// replace data, air is considered nonreplacing:
 		for (int sy = 0;sy <= delta.y;sy++) {
 			for (int sz = 0;sz <= delta.z;sz++) {
 				std::cout << "\n\t\t";
@@ -702,6 +715,7 @@ void processInput(GLFWwindow* window)
 			}
 		}
 
+		// size, offset data:
 		std::cout << "\n\t},\n\t";
 		std::cout << delta.x+1 << ", " << delta.y+1 << ", " << delta.z+1 << ", " << "\t\t\t// Size";
 		std::cout << "\n\t";
@@ -716,10 +730,6 @@ void processInput(GLFWwindow* window)
 		sel_pressed = false;
 	}
 }
-			
-			//			7, 3, 7,							// Size
-			//			-3, -2, -3							// Offset
-			//},
 
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
