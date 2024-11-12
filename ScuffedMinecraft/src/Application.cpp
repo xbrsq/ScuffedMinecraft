@@ -60,6 +60,11 @@ Camera camera;
 GLuint framebufferTexture;
 GLuint depthTexture;
 
+// custom data:
+glm::vec3 sel_start;
+glm::vec3 sel_end;
+bool sel_pressed = false;
+
 float rectangleVertices[] =
 {
 	 // Coords     // TexCoords
@@ -512,6 +517,8 @@ int main(int argc, char *argv[])
 			ImGui::Text("Position: x: %f, y: %f, z: %f", camera.Position.x, camera.Position.y, camera.Position.z);
 			ImGui::Text("Direction: x: %f, y: %f, z: %f", camera.Front.x, camera.Front.y, camera.Front.z);
 			ImGui::Text("Selected Block: %s", Blocks::blocks[selectedBlock].blockName.c_str());
+			ImGui::Text("Sel Starg: x: %f, y: %f, z: %f", sel_start.x, sel_start.y, sel_start.z);
+			ImGui::Text("Sel End: x: %f, y: %f, z: %f", sel_end.x, sel_end.y, sel_end.z);
 			if (ImGui::SliderInt("Render Distance", &Planet::planet->renderDistance, 0, 30))
 				Planet::planet->ClearChunkQueue();
 			if (ImGui::SliderInt("Render Height", &Planet::planet->renderHeight, 0, 10))
@@ -551,6 +558,30 @@ void framebufferSizeCallback(GLFWwindow* window, int width, int height)
 	// resize framebuffer depth texture
 	glBindTexture(GL_TEXTURE_2D, depthTexture);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, windowX, windowY, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+}
+
+unsigned int get_block_type(int blockX, int blockY, int blockZ) {
+
+	int chunkX = blockX < 0 ? floorf(blockX / (float)CHUNK_SIZE) : blockX / (int)CHUNK_SIZE;
+	int chunkY = blockY < 0 ? floorf(blockY / (float)CHUNK_SIZE) : blockY / (int)CHUNK_SIZE;
+	int chunkZ = blockZ < 0 ? floorf(blockZ / (float)CHUNK_SIZE) : blockZ / (int)CHUNK_SIZE;
+
+	int localBlockX = blockX - (chunkX * CHUNK_SIZE);
+	int localBlockY = blockY - (chunkY * CHUNK_SIZE);
+	int localBlockZ = blockZ - (chunkZ * CHUNK_SIZE);
+
+	Chunk* chunk = Planet::planet->GetChunk(ChunkPos(chunkX, chunkY, chunkZ));
+
+	if (chunk != nullptr)
+	{
+		unsigned int blockType = chunk->GetBlockAtPos(
+			localBlockX,
+			localBlockY,
+			localBlockZ);
+
+		return blockType;
+	}
+
 }
 
 void processInput(GLFWwindow* window)
@@ -599,7 +630,97 @@ void processInput(GLFWwindow* window)
 		camera.ProcessKeyboard(UP, deltaTime);
 	if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
 		camera.ProcessKeyboard(DOWN, deltaTime);
+
+	// selections:
+	if (glfwGetKey(window, GLFW_KEY_M) == GLFW_PRESS) {
+		auto result = Physics::Raycast(camera.Position, camera.Front, 5);
+		if (!result.hit)
+			return;
+
+		sel_start = glm::vec3(result.blockX, result.blockY, result.blockZ);
+	}
+	if (glfwGetKey(window, GLFW_KEY_N) == GLFW_PRESS) {
+		auto result = Physics::Raycast(camera.Position, camera.Front, 5);
+		if (!result.hit)
+			return;
+
+		sel_end = glm::vec3(result.blockX, result.blockY, result.blockZ);
+	}
+	if (glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS) {
+		if (sel_pressed) {
+			return;
+		}
+		sel_pressed = true;
+		// data
+		glm::vec3 delta = glm::vec3(
+			fabsf(sel_start.x - sel_end.x),
+			fabsf(sel_start.y - sel_end.y),
+			fabsf(sel_start.z - sel_end.z)
+		);
+		glm::vec3 min = glm::vec3(
+			fmin(sel_start.x, sel_end.x),
+			fmin(sel_start.y, sel_end.y),
+			fmin(sel_start.z, sel_end.z)
+		);
+		std::vector<int> dat = std::vector<int>((delta.x+1)*(delta.y+1)*(delta.z+1));
+		int pos = 0;
+		for (int sy = min.y; sy <= min.y+delta.y; sy++) {
+			for (int sx = min.x; sx <= min.x + delta.x; sx++) {
+				for (int sz = min.z; sz <= min.z + delta.z; sz++) {
+					dat[pos++] = get_block_type(sx, sy, sz);
+				}
+			}
+		}
+
+		pos = 0;
+		std::cout << "{\n\t{0,0,0,0,0,0},\t\t\t// Insert Noise Here";
+		std::cout << "\n\t{\t\t\t\t\t// Blocks";
+		for (int sy = 0;sy <= delta.y;sy++) {
+			for (int sz = 0;sz <= delta.z;sz++) {
+				std::cout << "\n\t\t";
+				for (int sx = 0;sx <= delta.x;sx++) {
+					std::cout << dat[pos++] << ", ";
+				}
+			}
+			if (sy != delta.y) {
+				std::cout << "\n\t\t";
+			}
+		}
+
+		std::cout << "\n\t},\n\t{\t\t\t\t// Replace?\n\t\t";
+
+		pos = 0;
+		for (int sy = 0;sy <= delta.y;sy++) {
+			for (int sz = 0;sz <= delta.z;sz++) {
+				std::cout << "\n\t\t";
+				for (int sx = 0;sx <= delta.x;sx++) {
+					std::cout << (dat[pos++] == Blocks::BLOCKS::AIR ? "false" : "true") << ", ";
+				}
+			}
+			if (sy != delta.y) {
+				std::cout << "\n\t\t";
+			}
+		}
+
+		std::cout << "\n\t},\n\t";
+		std::cout << delta.x+1 << ", " << delta.y+1 << ", " << delta.z+1 << ", " << "\t\t\t// Size";
+		std::cout << "\n\t";
+		std::cout << floorf(delta.x / -2) << ", " << 1 << ", " << floorf(delta.z / -2) << "\t\t\t// Offset";
+		std::cout << "\n}\n\n\n";
+
+
+
+
+	}
+	else {
+		sel_pressed = false;
+	}
 }
+			
+			//			7, 3, 7,							// Size
+			//			-3, -2, -3							// Offset
+			//},
+
 
 void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
 {
